@@ -59,7 +59,7 @@ public class ProductInfo implements Serializable {
     }
     public void pickUpPieces(double pieces){
         if(pieces>0)
-            this.quantity+=pieces;
+            this.quantity-=pieces;
     }
     public Double getPrice() {
         if(pricePer ==null)

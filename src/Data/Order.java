@@ -71,10 +71,10 @@ public class Order implements Serializable {
         if (filteredProducts.isEmpty())
             return "";
 
-        return "Don't forget to keep the goods " +
+        return "Don't forget to keep the " +
                 filteredProducts.stream()
                         .map(ProductInfo::getShortString)
-                        .collect(Collectors.joining("\n"))
+                        .collect(Collectors.joining(", "))
                 + " in the refrigerator";
     }
 

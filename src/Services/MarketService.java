@@ -3,10 +3,12 @@ package Services;
 import Data.*;
 
 import java.io.Serializable;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 
 //        Написати програму “Магазин”, яка повинна містити відомості та
@@ -73,6 +75,12 @@ public class MarketService implements Serializable {
                         product.getItem().getCategory() == ProductCategory.BAG).mapToInt(ProductInfo::getQuantity).sum();
     }
 
+    public void addCustomer(Customer customer) {
+        if (customer == null)
+            return;
+        customers.add(customer);
+    }
+
     public List<Item> getStorageItems() {
         return storage.stream().map(ProductInfo::getItem).toList();
     }
@@ -124,21 +132,25 @@ public class MarketService implements Serializable {
     public ProductInfo getWeightProductFromStorage(Item item, double weight) {
         if (item == null || item.getStorageType() != StorageType.KILOGRAM || weight <= 0)
             return null;
-        ProductInfo storageProduct = storage.stream().filter(prod -> item.equals(prod.getItem()) && prod.getWeight() <= weight).findFirst().orElse(null);
+        ProductInfo storageProduct = storage.stream()
+                .filter(prod -> item.equals(prod.getItem())
+                        && prod.getWeight() >= weight)
+                .findFirst()
+                .orElse(null);
         if (storageProduct == null)
             return null;
         storageProduct.pickUpWeight(weight);
-        return new ProductInfo(storageProduct.getItem(), storageProduct.getQuantity(), weight, storageProduct.getPrice());
+        return new ProductInfo(storageProduct.getItem(), storageProduct.getQuantity(), weight, storageProduct.getPricePer());
     }
 
     public ProductInfo getQuantityProductFromStorage(Item item, int count) {
         if (item == null || item.getStorageType() != StorageType.PIECE || count <= 0)
             return null;
-        ProductInfo storageProduct = storage.stream().filter(prod -> item.equals(prod.getItem()) && prod.getQuantity() <= count).findFirst().orElse(null);
+        ProductInfo storageProduct = storage.stream().filter(prod -> item.equals(prod.getItem()) && prod.getQuantity() >= count).findFirst().orElse(null);
         if (storageProduct == null)
             return null;
         storageProduct.pickUpPieces(count);
-        return new ProductInfo(storageProduct.getItem(), count, storageProduct.getWeight(), storageProduct.getPrice());
+        return new ProductInfo(storageProduct.getItem(), count, storageProduct.getWeight(), storageProduct.getPricePer());
     }
 
     public void returnProductToStorage(ProductInfo returnedProduct) {
@@ -181,7 +193,15 @@ public class MarketService implements Serializable {
     }
 
     public ProductInfo getBagFromStorage() {
-        return storage.stream().filter(prod -> prod != null && prod.getItem() != null && prod.getItem().getCategory() != null && prod.getItem().getCategory() == ProductCategory.BAG).findFirst().orElse(null);
+        ProductInfo bag = storage.stream()
+                .filter(prod -> prod != null && prod.getItem() != null
+                        && prod.getItem().getCategory() != null
+                        && prod.getItem().getCategory() == ProductCategory.BAG)
+                .findFirst()
+                .orElse(null);
+        if (bag == null)
+            return null;
+        return getQuantityProductFromStorage(bag.getItem(), 1);
     }
 
     public void addProductsToStorage(List<ProductInfo> products) {
@@ -202,23 +222,21 @@ public class MarketService implements Serializable {
 
 
     public Order createOrder(List<ProductInfo> products) {
-        List<ProductInfo> orderedProducts = products.stream()
-                .filter(product -> product != null && product.isValid() && storageContainsProduct(product))
-                .toList();
-
-        List<ProductInfo> bagProducts = orderedProducts.stream()
+        List<ProductInfo> orderedProducts = getProductsFromStorage(products);
+        long bagProductsCount = orderedProducts.stream()
                 .filter(prod ->
                         prod.getItem().getCategory() == ProductCategory.FRUITS ||
                                 prod.getItem().getCategory() == ProductCategory.VEGETABLES)
-                .toList();
-        if (bagProducts.size() > getBagsCount()) {
+                .count();
+        if (bagProductsCount > getBagsCount()) {
             System.out.println("Sorry, we don't have enough packages");
+        } else {
+            List<ProductInfo> bagsToAdd = IntStream.range(0, (int) bagProductsCount)
+                    .mapToObj(i -> getBagFromStorage())
+                    .filter(Objects::nonNull)
+                    .toList();
+            orderedProducts.addAll(bagsToAdd);
         }
-        bagProducts.stream()
-                .map(product -> getBagFromStorage())
-                .filter(Objects::nonNull)
-                .forEach(orderedProducts::add);
-
         return new Order(LocalDateTime.now(), false, orderedProducts);
     }
 
@@ -257,6 +275,7 @@ public class MarketService implements Serializable {
             return;
         customer.addOrder(order);
         orders.add(order);
+        order.setPaid(true);
         orderToFile(order, "Order", "orders");
     }
 
@@ -301,32 +320,31 @@ public class MarketService implements Serializable {
                 .sorted(Comparator.comparingDouble(ProductInfo::getPricePer))
                 .toList();
     }
-
-
-    public List<ProductInfo> getSortedByPriceWarehouseGoods() {
-        return null;
+    public List<ProductInfo> getSortedByPriceStorageGoods() {
+        return sortProductsByPrice(storage);
     }
-
+    public List<ProductInfo> getSortedAndFilterByPriceStorageGoods(Double minPrice, Double maxPrice) {
+        return storage.stream()
+                .filter(prod -> prod.getPricePer()<maxPrice||prod.getPricePer()>minPrice)
+                .sorted(Comparator.comparingDouble(ProductInfo::getPricePer))
+                .toList();
+    }
 
     public List<Order> getOrdersFromCustomer(Customer customer) {
-        return null;
+        return customer.getOrders();
     }
 
-
-    public void returnItem(Order order, Item item, double count) {
-
-    }
-
-    private double middlePrice() {
+    public double middlePrice() {
         return storage.stream()
-                .mapToDouble(ProductInfo::getPrice)
+                .mapToDouble(ProductInfo::getPricePer)
                 .average()
                 .orElse(0.0);
     }
 
     public String statisticByCustomer(Customer customer) {
         Map<Item, Double> itemsInfo = itemsByCustomer(customer);
-        final String format = "%-15s|%10s %2s|\n";;
+        final String format = "%-15s|%10s %2s|\n";
+        ;
         String tableHeader = String.format(format, "Item", "How much", "");
 
         String tableBody = itemsInfo.entrySet().stream()
@@ -337,7 +355,7 @@ public class MarketService implements Serializable {
                     return String.format(format, item.getName(), value, unit);
                 })
                 .collect(Collectors.joining());
-        return customer.toString()+ "\n"  + tableHeader + "------------------------------\n" + tableBody;
+        return customer.toString() + "\n" + tableHeader + "------------------------------\n" + tableBody;
 
     }
 
@@ -354,12 +372,44 @@ public class MarketService implements Serializable {
                 .orElse(null);
     }
 
-//● Написати метод для знаходження найпопулярнішого продукту;
+    public Map<LocalDate, Double> dayWithMaxProfit() {
+        Map<LocalDate, Double> dailyProfits = profitPerDay();
+        if (dailyProfits.isEmpty()) {
+            return Collections.emptyMap();
+        }
 
-    //● Написати метод для знаходження найбільшого доходу за день.
-    //public List<ProductInfo> productsByUser(Customer customer) {
-//● Написати метод для отримання даних про сумарну кількість кожного
-// купленого продукту заданого користувача;
+        Map.Entry<LocalDate, Double> maxEntry = dailyProfits.entrySet().stream()
+                .max(Comparator.comparingDouble(Map.Entry::getValue))
+                .orElse(null);
+        if (maxEntry == null || maxEntry.getKey() == null || maxEntry.getValue() == null)
+            return null;
+        return Collections.singletonMap(maxEntry.getKey(), maxEntry.getValue());
+    }
+
+    public String maxProfitDayToString() {
+        Map<LocalDate, Double> maxProfitDay = dayWithMaxProfit();
+        if (maxProfitDay.isEmpty()) {
+            return ("No paid orders.");
+        }
+        return "Day with biggest profit: " + maxProfitDay.keySet().toString() +
+                "\nProfit: " + maxProfitDay.values().toString();
+
+    }
+
+    public Map<LocalDate, Double> profitPerDay() {
+        return orders.stream()
+                .filter(Order::isPaid)
+                .collect(Collectors.groupingBy(
+                        order -> order.getPurchaseTime().toLocalDate(),
+                        Collectors.summarizingDouble(Order::totalPaid)
+                ))
+                .entrySet().stream()
+                .collect(Collectors.toMap(
+                        Map.Entry::getKey,
+                        entry -> entry.getValue().getSum()
+                ));
+    }
+
     public Map<Item, Double> itemsByCustomer(Customer customer) {
         Map<Item, Double> weight = customer.getOrders().stream()
                 .flatMap(order -> order.getProducts().stream())
