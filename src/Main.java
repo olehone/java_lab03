@@ -39,7 +39,7 @@ import java.util.stream.Collectors;
 //        Самостійно визначити та створити усі класи, поля, додаткові
 //        методи.
 public class Main {
-    public static void main(final String[] args) {
+    public static void main(final String[] args) throws InterruptedException {
 
         final MarketService service = new MarketService();
 //      ● Дані про кількість товарів та ціни потрібно завантажувати із файлу
@@ -74,6 +74,7 @@ public class Main {
                 , new ProductInfo(meatItem, 1, 5, 10.)
                 , new ProductInfo(coffeeItem, 1, 1., 1.));
         service.payOrder(testOrder, customer);
+        Thread.sleep(3000);
         Order testOrder2 = service.createOrder(new ProductInfo(potatoItem, 12, 11.,1.));
         service.payOrder(testOrder2, customer);
         //● Редагування товарів
